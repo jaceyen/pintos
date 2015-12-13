@@ -93,7 +93,7 @@ struct thread
     /* Shared between thread.c and synch.c. */
     struct list_elem elem;              /* List element. */
 
-    int block_ticks;                    /* Thread blocked time. */
+    int64_t block_ticks;                    /* Thread blocked time. */
 
 #ifdef USERPROG
     /* Owned by userprog/process.c. */
