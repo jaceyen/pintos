@@ -271,11 +271,7 @@ cond_init (struct condition *cond)
 bool
 condvar_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
 {
-  struct semaphore_elem *sa = list_entry (a, struct semaphore_elem, elem);
-  struct semaphore_elem *sb = list_entry (b, struct semaphore_elem, elem);
-  return sa->priority > sb->priority;
-  //return list_entry(list_begin(&sa->semaphore.waiters), struct thread, elem)->priority > list_entry(list_begin(&sb->semaphore.waiters), struct thread, elem)->priority;
-
+  return list_entry (a, struct semaphore_elem, elem)->priority > list_entry (b, struct semaphore_elem, elem)->priority;
 }
 
 /* Atomically releases LOCK and waits for COND to be signaled by
