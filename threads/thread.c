@@ -71,6 +71,76 @@ static void schedule (void);
 void thread_schedule_tail (struct thread *prev);
 static tid_t allocate_tid (void);
 
+/*OS3-----add---------*/
+/* Let thread hold a lock */
+void
+thread_hold_the_lock(struct lock *lock)
+{
+  enum intr_level old_level = intr_disable ();
+  list_insert_ordered (&thread_current ()->locks, &lock->elem, lock_cmp_priority, NULL);
+
+  if (lock->max_priority > thread_current ()->priority)
+  {
+    thread_current ()->priority = lock->max_priority;
+    thread_yield ();
+  }
+
+  intr_set_level (old_level);
+}
+
+/* lock comparation function */
+bool
+lock_cmp_priority (const struct list_elem *a, const struct list_elem *b, void *aux UNUSED)
+{
+  return list_entry (a, struct lock, elem)->max_priority > list_entry (b, struct lock, elem)->max_priority;
+}
+
+/* Donate current priority to thread t. */
+void
+thread_donate_priority (struct thread *t)
+{
+  enum intr_level old_level = intr_disable ();
+  thread_update_priority (t);
+
+  if (t->status == THREAD_READY)
+  {
+    list_remove (&t->elem);
+    list_insert_ordered (&ready_list, &t->elem, thread_cmp_priority, NULL);
+  }
+  intr_set_level (old_level);
+}
+
+/* Remove a lock. */
+void
+thread_remove_lock (struct lock *lock)
+{
+  enum intr_level old_level = intr_disable ();
+  list_remove (&lock->elem);
+  thread_update_priority (thread_current ());
+  intr_set_level (old_level);
+}
+
+/* Update priority. */
+void
+thread_update_priority (struct thread *t)
+{
+  enum intr_level old_level = intr_disable ();
+  int max_priority = t->base_priority;
+  int lock_priority;
+
+  if (!list_empty (&t->locks))
+  {
+    list_sort (&t->locks, lock_cmp_priority, NULL);
+    lock_priority = list_entry (list_front (&t->locks), struct lock, elem)->max_priority;
+    if (lock_priority > max_priority)
+      max_priority = lock_priority;
+  }
+
+  t->priority = max_priority;
+  intr_set_level (old_level);
+}
+/*OS3-----finish------*/
+
 /* Initializes the threading system by transforming the code
    that's currently running into a thread.  This can't work in
    general and it is possible in this case only because loader.S
@@ -359,11 +429,20 @@ thread_set_priority (int new_priority)
   struct thread *fthread;
   struct list_elem *felem;
 
-  thread_current ()->priority = new_priority;
+  enum intr_level old_level = intr_disable ();
+
+  struct thread *current_thread = thread_current ();
+  int old_priority = current_thread->priority;
+  current_thread->base_priority = new_priority;
   felem = list_begin (&ready_list);
   fthread = list_entry (felem, struct thread, elem);
-  if (new_priority < fthread->priority)
+  if (new_priority < fthread->priority || list_empty (&current_thread->locks))
+  {
+    current_thread->priority = new_priority;
     thread_yield ();
+  }
+  
+  intr_set_level (old_level);
 }
 
 /* Returns the current thread's priority. */
@@ -490,6 +569,11 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
   t->block_ticks = 0;
+  /*OS3-----add---------*/
+  t->base_priority = priority;
+  list_init (&t->locks);
+  t->lock_waiting = NULL;
+  /*OS3-----finish------*/
   list_push_back (&all_list, &t->allelem);
 }
 

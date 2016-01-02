@@ -114,9 +114,12 @@ sema_up (struct semaphore *sema)
   ASSERT (sema != NULL);
 
   old_level = intr_disable ();
-  if (!list_empty (&sema->waiters))
-    thread_unblock (list_entry (list_pop_front (&sema->waiters),
-                                struct thread, elem));
+  if (!list_empty (&sema->waiters)) {
+    /*OS3-----add---------*/
+    list_sort (&sema->waiters, thread_cmp_priority, NULL);
+    /*OS3-----finish------*/
+    thread_unblock (list_entry (list_pop_front (&sema->waiters), struct thread, elem));
+  }
   sema->value++;
   thread_yield ();
   intr_set_level (old_level);
@@ -194,12 +197,47 @@ lock_init (struct lock *lock)
 void
 lock_acquire (struct lock *lock)
 {
+  /*OS3-----add---------*/
+  struct thread *current_thread = thread_current ();
+  struct lock *l;
+  enum intr_level old_level;
+  /*OS3-----finish------*/
+
   ASSERT (lock != NULL);
   ASSERT (!intr_context ());
   ASSERT (!lock_held_by_current_thread (lock));
 
+  /*OS3-----add---------*/
+  if (lock->holder != NULL && !thread_mlfqs)
+  {
+    current_thread->lock_waiting = lock;
+    l = lock;
+    while (l && current_thread->priority > l->max_priority)
+    {
+      l->max_priority = current_thread->priority;
+      thread_donate_priority (l->holder);
+      l = l->holder->lock_waiting;
+    }
+  }
+  /*OS3-----finish------*/
+
   sema_down (&lock->semaphore);
+
+  /*OS3-----add---------*/
+  old_level = intr_disable ();
+  current_thread = thread_current ();
+  if (!thread_mlfqs)
+  {
+    current_thread->lock_waiting = NULL;
+    lock->max_priority = current_thread->priority;
+    thread_hold_the_lock (lock);
+  }
+  /*OS3-----finish------*/
+
   lock->holder = thread_current ();
+  /*OS3-----add---------*/
+  intr_set_level (old_level);
+  /*OS3-----finish------*/
 }
 
 /* Tries to acquires LOCK and returns true if successful or false
@@ -230,11 +268,24 @@ lock_try_acquire (struct lock *lock)
 void
 lock_release (struct lock *lock)
 {
+  /*OS3-----add---------*/
+  enum intr_level old_level;
+  /*OS3-----finish------*/
+
   ASSERT (lock != NULL);
   ASSERT (lock_held_by_current_thread (lock));
 
+  /*OS3-----add---------*/
+  old_level = intr_disable ();
+  if (!thread_mlfqs)
+    thread_remove_lock (lock);
+  /*OS3-----finish------*/
   lock->holder = NULL;
   sema_up (&lock->semaphore);
+
+  /*OS3-----add---------*/
+  intr_set_level (old_level);
+  /*OS3-----finish------*/
 }
 
 /* Returns true if the current thread holds LOCK, false
